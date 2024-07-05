@@ -57,6 +57,8 @@ public:
 	void testDynamicStructBasics();
 	void testOrderedDynamicStructBasics();
 	void testDynamicStructString();
+	void testDynamicStructEmptyString();
+	void testDynamicStructNoEscapeString();
 	void testOrderedDynamicStructString();
 	void testDynamicStructInt();
 	void testOrderedDynamicStructInt();
@@ -78,6 +80,7 @@ public:
 	void testEmpty();
 	void testIterator();
 	void testSharedPtr();
+	void testVarVisitor();
 
 	void setUp();
 	void tearDown();
@@ -143,7 +146,7 @@ private:
 		try { TU POCO_UNUSED i; i = dMin.convert<TU>(); fail("must fail"); }
 		catch (Poco::RangeException&) {}
 
-		if(sizeof(TS) == sizeof(TU))
+		if constexpr (sizeof(TS) == sizeof(TU))
 		{
 			TU iMax = std::numeric_limits<TU>::max();
 			Poco::Dynamic::Var dMax = iMax;

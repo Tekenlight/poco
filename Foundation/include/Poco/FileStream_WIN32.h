@@ -30,6 +30,8 @@ class Foundation_API FileStreamBuf: public BufferedBidirectionalStreamBuf
 	/// This stream buffer handles Fileio
 {
 public:
+	using NativeHandle = HANDLE;
+	
 	FileStreamBuf();
 		/// Creates a FileStreamBuf.
 
@@ -38,6 +40,9 @@ public:
 
 	void open(const std::string& path, std::ios::openmode mode);
 		/// Opens the given file in the given mode.
+
+	void openHandle(NativeHandle handle, std::ios::openmode mode);
+		/// Take ownership of the given HANDLE.
 
 	bool close();
 		/// Closes the File stream buffer. Returns true if successful,
@@ -48,6 +53,15 @@ public:
 
 	std::streampos seekpos(std::streampos pos, std::ios::openmode mode = std::ios::in | std::ios::out);
 		/// change to specified position, according to mode
+
+	void flushToDisk();
+		/// Forces buffered data to be written to the disk
+
+	NativeHandle nativeHandle() const;
+		/// Returns native file descriptor handle
+
+	Poco::UInt64 size() const;
+		/// Returns file size
 
 protected:
 	enum
@@ -60,7 +74,7 @@ protected:
 
 private:
 	std::string _path;
-	HANDLE _handle;
+	NativeHandle _handle;
 	UInt64 _pos;
 };
 

@@ -17,11 +17,11 @@
 #include "Poco/Event.h"
 #include "Poco/Timestamp.h"
 #include "Poco/Timespan.h"
-//#include <iostream>
 #if defined(__sun) && defined(__SVR4) && !defined(__EXTENSIONS__)
 #define __EXTENSIONS__
 #endif
 #include <climits>
+#include <iostream>
 
 
 using Poco::Thread;
@@ -41,7 +41,11 @@ public:
 	{
 		Thread* pThread = Thread::current();
 		if (pThread)
+		{
 			_threadName = pThread->name();
+			auto *pThreadImpl = reinterpret_cast<Poco::ThreadImpl *>(pThread);
+			_osThreadName = pThreadImpl->getOSThreadNameImpl();
+		}
 		_ran = true;
 		_event.wait();
 	}
@@ -54,6 +58,11 @@ public:
 	const std::string& threadName() const
 	{
 		return _threadName;
+	}
+
+	const std::string& osThreadName() const
+	{
+		return _osThreadName;
 	}
 
 	void notify()
@@ -71,6 +80,7 @@ public:
 private:
 	bool _ran;
 	std::string _threadName;
+	std::string _osThreadName;
 	Event _event;
 };
 
@@ -168,6 +178,7 @@ void ThreadTest::testThread()
 	assertTrue (!thread.isRunning());
 	assertTrue (r.ran());
 	assertTrue (!r.threadName().empty());
+	assertTrue (!r.osThreadName().empty());
 }
 
 
@@ -180,6 +191,19 @@ void ThreadTest::testNamedThread()
 	thread.join();
 	assertTrue (r.ran());
 	assertTrue (r.threadName() == "MyThread");
+	assertTrue (r.osThreadName() == r.threadName());
+
+	// name len > POCO_MAX_THREAD_NAME_LEN
+	Thread thread2("0123456789aaaaaaaaaa9876543210");
+	MyRunnable r2;
+	thread2.start(r2);
+	r2.notify();
+	thread2.join();
+	assertTrue (r2.ran());
+	assertTrue (r2.osThreadName() == r2.threadName());
+	assertTrue (r2.threadName().length() <= POCO_MAX_THREAD_NAME_LEN);
+	assertTrue (std::string(r2.threadName(), 0, 7) == "0123456");
+	assertTrue (std::string(r2.threadName(), r2.threadName().size() - 7) == "6543210");
 }
 
 
@@ -347,10 +371,11 @@ void ThreadTest::testThreadFunction()
 
 	assertTrue (!thread.isRunning());
 
-	int tmp = MyRunnable::_staticVar;
+	MyRunnable::_staticVar = 0;
+	int tmp = 1;
 	thread.start(freeFunc, &tmp);
 	thread.join();
-	assertTrue (tmp * 2 == MyRunnable::_staticVar);
+	assertTrue (tmp == MyRunnable::_staticVar);
 
 	assertTrue (!thread.isRunning());
 
@@ -408,15 +433,16 @@ void ThreadTest::testThreadStackSize()
 	assertTrue (0 == thread.getStackSize());
 	thread.setStackSize(stackSize);
 	assertTrue (stackSize <= thread.getStackSize());
-	int tmp = MyRunnable::_staticVar;
+	MyRunnable::_staticVar = 0;
+	int tmp = 1;
 	thread.start(freeFunc, &tmp);
 	thread.join();
-	assertTrue (tmp * 2 == MyRunnable::_staticVar);
+	assertTrue (1 == MyRunnable::_staticVar);
 
 	stackSize = 1;
 	thread.setStackSize(stackSize);
 
-#if !defined(POCO_OS_FAMILY_BSD) // on BSD family, stack size is rounded
+#if defined(POCO_OS_FAMILY_BSD) // on BSD family, stack size is rounded
 	#ifdef PTHREAD_STACK_MIN
 		assertTrue (PTHREAD_STACK_MIN == thread.getStackSize());
 	#else
@@ -424,17 +450,22 @@ void ThreadTest::testThreadStackSize()
 	#endif
 #endif
 
-	tmp = MyRunnable::_staticVar;
-	thread.start(freeFunc, &tmp);
-	thread.join();
-	assertTrue (tmp * 2 == MyRunnable::_staticVar);
-
-	thread.setStackSize(0);
-	assertTrue (0 == thread.getStackSize());
-	tmp = MyRunnable::_staticVar;
-	thread.start(freeFunc, &tmp);
-	thread.join();
-	assertTrue (tmp * 2 == MyRunnable::_staticVar);
+// disabled on FreeBSD; segfaults due to stack overflow,
+// possibly happens on other BSD OSes)
+#if (POCO_OS == POCO_OS_FREE_BSD)
+	{
+		int tmp = MyRunnable::_staticVar;
+		thread.start(freeFunc, &tmp);
+		thread.join();
+		assertTrue (tmp * 2 == MyRunnable::_staticVar);
+		thread.setStackSize(0);
+		assertTrue (0 == thread.getStackSize());
+		tmp = MyRunnable::_staticVar;
+		thread.start(freeFunc, &tmp);
+		thread.join();
+		assertTrue (tmp * 2 == MyRunnable::_staticVar);
+	}
+#endif
 }
 
 
@@ -444,6 +475,22 @@ void ThreadTest::testSleep()
 	Thread::sleep(200);
 	Poco::Timespan elapsed = start.elapsed();
 	assertTrue (elapsed.totalMilliseconds() >= 190 && elapsed.totalMilliseconds() < 250);
+}
+
+
+void ThreadTest::testAffinity()
+{
+#if POCO_OS == POCO_OS_LINUX
+	MyRunnable mr;
+	Thread t;
+	t.start(mr);
+	assertTrue (t.setAffinity(0));
+	assertEqual (t.getAffinity(), 0);
+	mr.notify();
+	t.join();
+#else
+	std::cout << "not implemented";
+#endif
 }
 
 
@@ -475,6 +522,7 @@ CppUnit::Test* ThreadTest::suite()
 	CppUnit_addTest(pSuite, ThreadTest, testThreadFunctor);
 	CppUnit_addTest(pSuite, ThreadTest, testThreadStackSize);
 	CppUnit_addTest(pSuite, ThreadTest, testSleep);
+	CppUnit_addTest(pSuite, ThreadTest, testAffinity);
 
 	return pSuite;
 }

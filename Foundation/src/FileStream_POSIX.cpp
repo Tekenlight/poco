@@ -19,6 +19,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <cstdio>
+#include <cstring>
 
 
 namespace Poco {
@@ -64,6 +66,22 @@ void FileStreamBuf::open(const std::string& path, std::ios::openmode mode)
 	_fd = ::open(path.c_str(), flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 	if (_fd == -1)
 		File::handleLastError(_path);
+
+	if ((mode & std::ios::app) || (mode & std::ios::ate))
+		seekoff(0, std::ios::end, mode);
+}
+
+
+void FileStreamBuf::openHandle(NativeHandle fd, std::ios::openmode mode)
+{
+	poco_assert(_fd == -1);
+	poco_assert(fd != -1);
+
+	_pos = 0;
+	setMode(mode);
+	resetBuffers();
+
+	_fd = fd;
 
 	if ((mode & std::ios::app) || (mode & std::ios::ate))
 		seekoff(0, std::ios::end, mode);
@@ -164,6 +182,34 @@ std::streampos FileStreamBuf::seekpos(std::streampos pos, std::ios::openmode mod
 
 	_pos = lseek(_fd, pos, SEEK_SET);
 	return _pos;
+}
+
+
+void FileStreamBuf::flushToDisk()
+{
+	if (getMode() & std::ios::out)
+	{
+		sync();
+		if (fsync(_fd) != 0)
+			File::handleLastError(_path);
+	}
+}
+
+
+FileStreamBuf::NativeHandle FileStreamBuf::nativeHandle() const
+{
+	return _fd;
+}
+
+Poco::UInt64 FileStreamBuf::size() const
+{
+	struct stat stat_buf;
+	int rc = fstat(_fd, &stat_buf);
+	if (rc < 0)
+	{
+		Poco::SystemException(strerror(errno), errno);
+	}
+	return stat_buf.st_size;
 }
 
 

@@ -54,6 +54,15 @@ Socket::Socket(const Socket& socket):
 	_pImpl->duplicate();
 }
 
+
+Socket Socket::fromFileDescriptor(poco_socket_t fd)
+{
+	Socket s;
+	s.impl()->useFileDescriptor(fd);
+	return s;
+}
+
+
 #if POCO_NEW_STATE_ON_MOVE
 
 Socket::Socket(Socket&& socket):
@@ -100,7 +109,7 @@ int Socket::select(SocketList& readList, SocketList& writeList, SocketList& exce
 {
 #if defined(POCO_HAVE_FD_EPOLL)
 
-	int epollSize = readList.size() + writeList.size() + exceptList.size();
+	int epollSize = static_cast<int>(readList.size() + writeList.size() + exceptList.size());
 	if (epollSize == 0) return 0;
 
 	PollSet ps;
@@ -119,7 +128,7 @@ int Socket::select(SocketList& readList, SocketList& writeList, SocketList& exce
 		if (s.second & PollSet::POLL_ERROR) exceptList.push_back(s.first);
 	}
 
-	return readList.size() + writeList.size() + exceptList.size();
+	return static_cast<int>(readList.size() + writeList.size() + exceptList.size());
 
 #elif defined(POCO_HAVE_FD_POLL)
 	typedef Poco::SharedPtr<pollfd, Poco::ReferenceCounter, Poco::ReleaseArrayPolicy<pollfd>> SharedPollArray;

@@ -51,6 +51,54 @@ void FileStreamTest::testRead()
 }
 
 
+#if defined(POCO_OS_FAMILY_WINDOWS)
+#include "Poco/UnicodeConverter.h"
+#else
+#include <fcntl.h>
+#endif
+
+void FileStreamTest::testWriteReadNativeHandle()
+{
+	Poco::FileOutputStream fos;
+	Poco::FileInputStream fis;
+	Poco::FileIOS::NativeHandle outHandle;
+
+#if defined(POCO_OS_FAMILY_WINDOWS)
+	char tmp[]={'\xc3', '\x84', '\xc3', '\x96', '\xc3', '\x9c', '\xc3', '\xa4', '\xc3', '\xb6', '\xc3', '\xbc', '\0'};
+	std::string file(tmp);
+	file.append(".txt");
+	std::wstring utf16Path;
+	Poco::UnicodeConverter::toUTF16(file, utf16Path);
+    outHandle = CreateFileW(utf16Path.c_str(), GENERIC_WRITE, FILE_SHARE_WRITE | FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    assertTrue(outHandle != INVALID_HANDLE_VALUE);
+#else
+	std::string file("testfile.txt");
+	outHandle = ::open(file.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+#endif
+
+	Poco::TemporaryFile::registerForDeletion(file);
+
+    fos.openHandle(outHandle, std::ios::binary | std::ios::out | std::ios::trunc);
+	fos << "sometestdata";
+	fos.close();
+
+    Poco::FileIOS::NativeHandle inHandle;
+
+#if defined(POCO_OS_FAMILY_WINDOWS)
+    inHandle = CreateFileW(utf16Path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    assertTrue(inHandle != INVALID_HANDLE_VALUE);
+#else
+    inHandle = ::open(file.c_str(), O_RDONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+#endif
+
+	fis.openHandle(inHandle, std::ios::in);
+	assertTrue (fis.good());
+	std::string read;
+	fis >> read;
+	assertTrue (!read.empty());
+}
+
+
 void FileStreamTest::testWrite()
 {
 #if defined(POCO_OS_FAMILY_WINDOWS)
@@ -182,7 +230,7 @@ void FileStreamTest::testOpenModeAte()
 	ostr << "0123456789";
 	ostr.close();
 
-	Poco::FileStream str1("test.txt", std::ios::ate);
+	Poco::FileStream str1("test.txt", std::ios::in | std::ios::ate);
 	int c = str1.get();
 	assertTrue (str1.eof());
 
@@ -193,7 +241,7 @@ void FileStreamTest::testOpenModeAte()
 
 	str1.close();
 
-	Poco::FileStream str2("test.txt", std::ios::ate);
+	Poco::FileStream str2("test.txt", std::ios::in | std::ios::out | std::ios::ate);
 	str2 << "abcdef";
 	str2.seekg(0);
 	std::string s;
@@ -209,7 +257,7 @@ void FileStreamTest::testOpenModeApp()
 	ostr << "0123456789";
 	ostr.close();
 
-	Poco::FileStream str1("test.txt", std::ios::app);
+	Poco::FileStream str1("test.txt", std::ios::in | std::ios::out | std::ios::app);
 
 	str1 << "abc";
 
@@ -229,7 +277,7 @@ void FileStreamTest::testOpenModeApp()
 
 void FileStreamTest::testSeek()
 {
-	Poco::FileStream str("test.txt", std::ios::trunc);
+	Poco::FileStream str("test.txt", std::ios::in | std::ios::out | std::ios::trunc);
 	str << "0123456789abcdef";
 
 	str.seekg(0);
@@ -270,7 +318,7 @@ void FileStreamTest::testSeek()
 
 void FileStreamTest::testMultiOpen()
 {
-	Poco::FileStream str("test.txt", std::ios::trunc);
+	Poco::FileStream str("test.txt", std::ios::out | std::ios::trunc);
 	str << "0123456789\n";
 	str << "abcdefghij\n";
 	str << "klmnopqrst\n";
@@ -304,6 +352,7 @@ CppUnit::Test* FileStreamTest::suite()
 	CppUnit::TestSuite* pSuite = new CppUnit::TestSuite("FileStreamTest");
 
 	CppUnit_addTest(pSuite, FileStreamTest, testRead);
+	CppUnit_addTest(pSuite, FileStreamTest, testWriteReadNativeHandle);
 	CppUnit_addTest(pSuite, FileStreamTest, testWrite);
 	CppUnit_addTest(pSuite, FileStreamTest, testReadWrite);
 	CppUnit_addTest(pSuite, FileStreamTest, testOpen);

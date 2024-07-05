@@ -14,6 +14,8 @@
 
 #include "Poco/DateTime.h"
 #include "Poco/Timespan.h"
+#include "Poco/Exception.h"
+#include "Poco/Format.h"
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -70,16 +72,28 @@ DateTime::DateTime(int year, int month, int day, int hour, int minute, int secon
 	_millisecond(millisecond),
 	_microsecond(microsecond)
 {
-	poco_assert (year >= 0 && year <= 9999);
-	poco_assert (month >= 1 && month <= 12);
-	poco_assert (day >= 1 && day <= daysOfMonth(year, month));
-	poco_assert (hour >= 0 && hour <= 23);
-	poco_assert (minute >= 0 && minute <= 59);
-	poco_assert (second >= 0 && second <= 60); // allow leap seconds
-	poco_assert (millisecond >= 0 && millisecond <= 999);
-	poco_assert (microsecond >= 0 && microsecond <= 999);
-
-	_utcTime = toUtcTime(toJulianDay(year, month, day)) + 10*(hour*Timespan::HOURS + minute*Timespan::MINUTES + second*Timespan::SECONDS + millisecond*Timespan::MILLISECONDS + microsecond);
+	if (isValid(_year, _month, _day, _hour, _minute, _second, _millisecond, _microsecond))
+	{
+		_utcTime = toUtcTime(toJulianDay(year, month, day)) +
+			10 * (hour*Timespan::HOURS + minute*Timespan::MINUTES + second*Timespan::SECONDS +
+				  millisecond*Timespan::MILLISECONDS + microsecond);
+	}
+	else
+	{
+		throw Poco::InvalidArgumentException(Poco::format("Date time is %d-%d-%dT%d:%d:%d.%d.%d\n"
+			"Valid values:\n"
+			"0 <= year <= 9999\n"
+			"1 <= month <= 12\n"
+			"1 <= day <=  %d\n"
+			"0 <= hour <= 23\n"
+			"0 <= minute <= 59\n"
+			"0 <= second <= 59\n"
+			"0 <= millisecond <= 999\n"
+			"0 <= microsecond <= 999",
+			_year, _month, _day, _hour, _minute,
+			_second, _millisecond, _microsecond,
+			daysOfMonth(_year, _month)));
+	}
 }
 
 
@@ -420,7 +434,14 @@ void DateTime::computeGregorian(double julianDay)
 
 void DateTime::computeDaytime()
 {
-	Timespan span(_utcTime/10);
+	Timestamp::UtcTimeVal ut(_utcTime);
+	if (ut < 0) {
+		// GH3723: UtcTimeVal is negative for pre-gregorian dates
+		// move it 1600 years to the future
+		// keeping hour, minute, second,... for corrections
+		ut += Int64(86400)*1000*1000*10*1600*365;
+	}
+	Timespan span(ut/10);
 	int hour = span.hours();
 	// Due to double rounding issues, the previous call to computeGregorian()
 	// may have crossed into the next or previous day. We need to correct that.
